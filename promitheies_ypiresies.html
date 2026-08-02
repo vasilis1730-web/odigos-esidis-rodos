@@ -83,6 +83,7 @@ table.ref a{color:#1d4ed8;font-weight:700}
 #cloudBar .cl-user{font-weight:800}
 #cloudBar .cl-folder{background:#134e4a;color:#ccfbf1;padding:3px 10px;border-radius:99px;font-weight:800}
 #cloudBar .cl-meta{color:#94a3b8}
+#cloudBar .cl-warn{color:#fbbf24;font-weight:700}
 #cloudBar .cl-btn{margin-left:auto;border:1px solid #334155;background:#1e293b;color:#e2e8f0;
   border-radius:8px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer}
 #cloudBar .cl-btn+.cl-btn{margin-left:0}
@@ -2025,7 +2026,8 @@ window.SECTOR='promitheies';
 window.LOCAL={
   get:function(){ try{return JSON.parse(JSON.stringify(state))}catch(e){return {}} },
   set:function(o){ state=Object.assign({},DEFAULTS,o);persist();compute();render(); },
-  title:function(){ return state['SUBJECT_TITLE']||'' }
+  title:function(){ return state['SUBJECT_TITLE']||'' },
+  setTitle:function(t){ state['SUBJECT_TITLE']=t; persist();compute();render(); }
 };
 (function(){
   var _s=window.saveState||window.persist;
