@@ -91,7 +91,10 @@ async function doLogin(){
     var r=await SB.auth.signInWithPassword({email:mail.trim(),password:pass});
     if(r.error) return fail(r.error.message==='Invalid login credentials'
       ?'Λάθος email ή κωδικός.':r.error.message);
-    USER=r.data.user; IS_ADMIN=null; await checkAdmin(); closeModal(); bar();
+    USER=r.data.user; IS_ADMIN=null; MY_ACTIVE=null;
+    var ok=await loadProfile();
+    if(!ok){ window.__afterLogin=null; return }
+    closeModal(); bar();
     toast('Συνδεθήκατε ως '+USER.email+(IS_ADMIN?' — διαχειριστής':''));
     var a=window.__afterLogin; window.__afterLogin=null;
     if(typeof a==='function') a(); else folders();
@@ -105,16 +108,38 @@ async function logout(){
 }
 
 /* ---------- Φάκελοι ---------- */
-var IS_ADMIN=null, MY_ROLE=null;
-async function checkAdmin(){
-  if(IS_ADMIN!==null) return IS_ADMIN;
+var IS_ADMIN=null, MY_ROLE=null, MY_ACTIVE=null;
+/* Επιστρέφει true αν ο λογαριασμός επιτρέπεται να συνεχίσει.
+   Απενεργοποιημένος ή χωρίς προφίλ αποσυνδέεται αμέσως. */
+async function loadProfile(){
   try{
-    var r=await SB.from('profiles').select('role,full_name').eq('id',USER.id).single();
-    MY_ROLE=r.data?r.data.role:null;
-    IS_ADMIN=(MY_ROLE==='admin');
-  }catch(e){ IS_ADMIN=false }
-  return IS_ADMIN;
+    var r=await SB.from('profiles').select('role,full_name,is_active').eq('id',USER.id).single();
+    if(r.error||!r.data){
+      await kick('Ο λογαριασμός σας δεν έχει προφίλ στην υπηρεσία.\n\n'+
+        'Επικοινωνήστε με τον διαχειριστή για να σας δοθεί πρόσβαση.');
+      return false;
+    }
+    MY_ROLE=r.data.role; MY_ACTIVE=r.data.is_active!==false; IS_ADMIN=(MY_ROLE==='admin');
+    if(!MY_ACTIVE){
+      await kick('Ο λογαριασμός σας έχει απενεργοποιηθεί από τον διαχειριστή.\n\n'+
+        'Δεν έχετε πρόσβαση στους κοινούς φακέλους της υπηρεσίας.');
+      return false;
+    }
+    return true;
+  }catch(e){ IS_ADMIN=false; return true }
 }
+async function kick(msg){
+  try{ if(SB) await SB.auth.signOut() }catch(e){}
+  USER=null; FOLDER=null; IS_ADMIN=null; MY_ROLE=null; pending=false; conflict=null;
+  clearTimeout(timer); closeModal(); bar();
+  openModal('Δεν έχετε πρόσβαση',
+    '<div class="notice" style="border-left:6px solid #b91c1c"><b>'+esc(msg.split('\n')[0])+'</b>'+
+    '<div style="margin-top:8px">'+esc(msg.split('\n').slice(1).join(' ').trim())+'</div></div>'+
+    '<div class="notice">Μπορείτε να συνεχίσετε να χρησιμοποιείτε τον οδηγό τοπικά. '+
+    'Ό,τι συμπληρώνετε θα μένει μόνο σε αυτόν τον υπολογιστή.</div>',
+    '<button class="btn" onclick="closeModal()">Κατάλαβα</button>');
+}
+async function checkAdmin(){ return IS_ADMIN===true }
 async function folders(showArchived){
   if(!USER) return login();
   var admin=await checkAdmin();
@@ -267,7 +292,11 @@ async function users(){
         'και τον αλλάζετε από εδώ.'+
         '<div style="margin-top:8px"><button class="btn small primary" '+
         'onclick="window.open(\'https://supabase.com/dashboard/project/hafaxrebjzootjzzqkzx/auth/users\',\'_blank\')">'+
-        'Άνοιγμα διαχείρισης λογαριασμών</button></div></div>';
+        'Άνοιγμα διαχείρισης λογαριασμών</button></div></div>'+
+        '<div class="notice" style="border-left:6px solid #b45309"><b>Τι κάνει η απενεργοποίηση.</b> '+
+        'Ο λογαριασμός χάνει αμέσως κάθε πρόσβαση στους φακέλους και αποσυνδέεται μόλις προσπαθήσει να μπει. '+
+        'Ο κωδικός του όμως παραμένει έγκυρος στο Supabase. Για οριστική απαγόρευση εισόδου, '+
+        'μπείτε στη διαχείριση λογαριασμών και κάντε <b>Ban user</b> ή αλλάξτε του τον κωδικό.</div>';
   rows.forEach(function(u){
     var me=u.id===USER.id;
     h+='<div class="panel" style="margin:8px 0;border-left:6px solid '+(u.is_active?(u.role==='admin'?'#b45309':'#0f766e'):'#cbd5e1')+'">'+
@@ -340,7 +369,7 @@ async function boot(){
   bar();
   try{ await ensure() }catch(e){ return }
   var s=await SB.auth.getSession();
-  if(s.data&&s.data.session){ USER=s.data.session.user; await checkAdmin(); bar() }
+  if(s.data&&s.data.session){ USER=s.data.session.user; var ok=await loadProfile(); if(ok) bar(); }
 }
 function wire(){
   var orig=window.resetApp;
