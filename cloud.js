@@ -43,6 +43,7 @@ function bar(){
     (FOLDER?'<span class="cl-folder">'+esc(FOLDER.title)+'</span>'+statusHtml()
            :'<span class="cl-warn">Δεν έχει ανοίξει φάκελος — οι αλλαγές δεν αποθηκεύονται στην υπηρεσία</span>')+
     '<button class="cl-btn" onclick="Cloud.folders()">Φάκελοι υπηρεσίας</button>'+
+    (IS_ADMIN?'<button class="cl-btn" onclick="Cloud.users()">Χρήστες</button>':'')+
     (FOLDER?'<button class="cl-btn" onclick="Cloud.save()">Αποθήκευση τώρα</button>':'')+
     '<button class="cl-btn ghost" onclick="Cloud.logout()">Έξοδος</button>';
 }
@@ -90,7 +91,8 @@ async function doLogin(){
     var r=await SB.auth.signInWithPassword({email:mail.trim(),password:pass});
     if(r.error) return fail(r.error.message==='Invalid login credentials'
       ?'Λάθος email ή κωδικός.':r.error.message);
-    USER=r.data.user; closeModal(); bar(); toast('Συνδεθήκατε ως '+USER.email);
+    USER=r.data.user; IS_ADMIN=null; await checkAdmin(); closeModal(); bar();
+    toast('Συνδεθήκατε ως '+USER.email+(IS_ADMIN?' — διαχειριστής':''));
     var a=window.__afterLogin; window.__afterLogin=null;
     if(typeof a==='function') a(); else folders();
   }catch(e){ fail('Σφάλμα σύνδεσης: '+e.message) }
@@ -103,35 +105,69 @@ async function logout(){
 }
 
 /* ---------- Φάκελοι ---------- */
-async function folders(){
+var IS_ADMIN=null, MY_ROLE=null;
+async function checkAdmin(){
+  if(IS_ADMIN!==null) return IS_ADMIN;
+  try{
+    var r=await SB.from('profiles').select('role,full_name').eq('id',USER.id).single();
+    MY_ROLE=r.data?r.data.role:null;
+    IS_ADMIN=(MY_ROLE==='admin');
+  }catch(e){ IS_ADMIN=false }
+  return IS_ADMIN;
+}
+async function folders(showArchived){
   if(!USER) return login();
+  var admin=await checkAdmin();
   openModal('Φάκελοι υπηρεσίας','<div class="notice">Φόρτωση…</div>','');
-  var q=await SB.from('esidis_folders').select('*')
-    .eq('sector',window.SECTOR).eq('status','active').order('updated_at',{ascending:false});
-  if(q.error) return openModal('Φάκελοι υπηρεσίας',
-    '<div class="notice"><b>Σφάλμα:</b> '+esc(q.error.message)+'</div>',
+  var q=SB.from('esidis_folders').select('*').eq('sector',window.SECTOR);
+  if(!showArchived) q=q.eq('status','active');
+  q=q.order('updated_at',{ascending:false});
+  var res=await q;
+  if(res.error) return openModal('Φάκελοι υπηρεσίας',
+    '<div class="notice"><b>Σφάλμα:</b> '+esc(res.error.message)+'</div>',
     '<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
-  var rows=q.data||[];
+  var rows=res.data||[];
+  var active=rows.filter(function(r){return r.status==='active'});
+  var archived=rows.filter(function(r){return r.status==='archived'});
   var h='<div class="notice">Κάθε φάκελος είναι ένα έργο ή μια διαδικασία. Ανοίγοντάς τον επανέρχονται '+
         '<b>όλα τα στοιχεία και το σημείο της ροής</b> όπως τα άφησε ο τελευταίος συνάδελφος. '+
         'Ό,τι συμπληρώνετε αποθηκεύεται αυτόματα.</div>'+
         '<button class="btn primary" onclick="Cloud.newProject()">+ Νέος φάκελος</button><hr style="margin:16px 0">';
-  if(!rows.length) h+='<div class="side-note">Δεν υπάρχει ακόμη κανένας φάκελος σε αυτή την ενότητα.</div>';
-  rows.forEach(function(r){
+  function rowHtml(r,isArchived){
     var cur=FOLDER&&FOLDER.id===r.id, st=r.state||{}, bits=[];
     if(st.ESIDIS_NO) bits.push('Α/Α ΕΣΗΔΗΣ '+esc(st.ESIDIS_NO));
     var bg=st.BUDGET_GROSS||st.GROSS; if(bg) bits.push(esc(bg)+' €');
-    h+='<div class="panel" style="margin:9px 0;border-left:6px solid '+(cur?'#0f766e':'#c9ced6')+'">'+
+    var color=isArchived?'#94a3b8':(cur?'#0f766e':'#c9ced6');
+    var btns='';
+    if(!isArchived){
+      btns+=(cur?'':'<button class="btn small primary" onclick="Cloud.open(\''+r.id+'\')">Άνοιγμα</button> ');
+      btns+='<button class="btn small" onclick="Cloud.rename(\''+r.id+'\')">Μετονομασία</button> ';
+      btns+='<button class="btn small" onclick="Cloud.archive(\''+r.id+'\')">Αρχειοθέτηση</button>';
+    } else {
+      btns+='<button class="btn small" onclick="Cloud.unarchive(\''+r.id+'\')">Επαναφορά</button>';
+      if(admin) btns+=' <button class="btn small" style="color:#b91c1c;border-color:#b91c1c" onclick="Cloud.del(\''+r.id+'\',\''+esc(r.title)+'\')">Διαγραφή</button>';
+    }
+    return '<div class="panel" style="margin:9px 0;border-left:6px solid '+color+'">'+
+      (isArchived?'<span style="font-size:11px;font-weight:800;color:#94a3b8;letter-spacing:.4px">ΑΡΧΕΙΟ · </span>':'')+
       '<b>'+esc(r.title)+'</b>'+(cur?' <span class="cl-tag">ανοιχτός</span>':'')+
       (bits.length?'<div class="side-note">'+bits.join(' · ')+'</div>':'')+
       '<div class="side-note">Ενημερώθηκε '+when(r.updated_at)+
       (r.updated_by_email?' από '+esc(r.updated_by_email):'')+'</div>'+
-      (cur?'':'<button class="btn small primary" onclick="Cloud.open(\''+r.id+'\')">Άνοιγμα</button> ')+
-      '<button class="btn small" onclick="Cloud.rename(\''+r.id+'\')">Μετονομασία</button> '+
-      '<button class="btn small" onclick="Cloud.archive(\''+r.id+'\')">Αρχειοθέτηση</button></div>';
-  });
-  openModal('Φάκελοι υπηρεσίας — '+(window.SECTOR==='erga'?'Δημόσια Έργα':'Προμήθειες και Υπηρεσίες'),h,
-    '<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
+      btns+'</div>';
+  }
+  if(!active.length&&!showArchived)
+    h+='<div class="side-note">Δεν υπάρχει ακόμη κανένας φάκελος σε αυτή την ενότητα.</div>';
+  active.forEach(function(r){ h+=rowHtml(r,false) });
+  if(showArchived&&archived.length){
+    h+='<hr style="margin:18px 0"><div style="font-size:12px;font-weight:800;color:#94a3b8;letter-spacing:.5px">'+
+       'ΑΡΧΕΙΟΘΕΤΗΜΕΝΟΙ ('+archived.length+')</div>';
+    archived.forEach(function(r){ h+=rowHtml(r,true) });
+  }
+  var foot='<button class="btn" onclick="closeModal()">Κλείσιμο</button>';
+  if(admin) foot+=(showArchived
+    ?'<button class="btn" onclick="Cloud.folders(false)">Απόκρυψη αρχείου</button>'
+    :'<button class="btn" onclick="Cloud.folders(true)">Εμφάνιση αρχείου</button>');
+  openModal('Φάκελοι υπηρεσίας — '+(window.SECTOR==='erga'?'Δημόσια Έργα':'Προμήθειες και Υπηρεσίες'),h,foot);
 }
 function newProject(localFallback){
   if(!USER){
@@ -214,6 +250,52 @@ function adopt(row){
   SUSPEND=true; FOLDER=row; LOADED_AT=row.updated_at; pending=false;
   window.LOCAL.set(row.state||{}); SUSPEND=false; bar();
 }
+async function users(){
+  if(!USER) return login();
+  if(!await checkAdmin()) return alert('Η διαχείριση χρηστών είναι διαθέσιμη μόνο σε διαχειριστή.');
+  openModal('Χρήστες','<div class="notice">Φόρτωση…</div>','');
+  var q=await SB.from('profiles').select('id,email,full_name,role,is_active').order('email');
+  if(q.error) return openModal('Χρήστες','<div class="notice"><b>Σφάλμα:</b> '+esc(q.error.message)+'</div>',
+    '<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
+  var rows=q.data||[];
+  var names={admin:'Διαχειριστής',unit_user:'Χρήστης μονάδας',viewer:'Προβολή',central:'Κεντρική υπηρεσία'};
+  var h='<div class="notice"><b>Όλοι οι παρακάτω λογαριασμοί έχουν πρόσβαση στους κοινούς φακέλους</b>, '+
+        'αρκεί να είναι ενεργοί. Ο ρόλος καθορίζει μόνο ποιος μπορεί να διαγράφει αρχειοθετημένους φακέλους '+
+        'και να διαχειρίζεται χρήστες.</div>'+
+        '<div class="notice">Νέος λογαριασμός δεν δημιουργείται από εδώ. Γίνεται στο Supabase: '+
+        '<b>Authentication → Users → Add user</b>. Το προφίλ δημιουργείται αυτόματα με ρόλο «Προβολή» '+
+        'και τον αλλάζετε από εδώ.'+
+        '<div style="margin-top:8px"><button class="btn small primary" '+
+        'onclick="window.open(\'https://supabase.com/dashboard/project/hafaxrebjzootjzzqkzx/auth/users\',\'_blank\')">'+
+        'Άνοιγμα διαχείρισης λογαριασμών</button></div></div>';
+  rows.forEach(function(u){
+    var me=u.id===USER.id;
+    h+='<div class="panel" style="margin:8px 0;border-left:6px solid '+(u.is_active?(u.role==='admin'?'#b45309':'#0f766e'):'#cbd5e1')+'">'+
+      '<b>'+esc(u.full_name||u.email)+'</b>'+(me?' <span class="cl-tag">εσείς</span>':'')+
+      (u.is_active?'':' <span class="cl-tag" style="background:#fee2e2;color:#991b1b">ανενεργός</span>')+
+      '<div class="side-note">'+esc(u.email)+'</div>'+
+      '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      '<select onchange="Cloud.setRole(\''+u.id+'\',this.value)"'+(me?' disabled':'')+'>'+
+      Object.keys(names).map(function(k){
+        return '<option value="'+k+'"'+(u.role===k?' selected':'')+'>'+names[k]+'</option>'}).join('')+
+      '</select>'+
+      (me?'<span class="side-note">Δεν μπορείτε να αλλάξετε τον δικό σας ρόλο</span>'
+         :'<button class="btn small" onclick="Cloud.toggleActive(\''+u.id+'\','+(u.is_active?'false':'true')+')">'+
+          (u.is_active?'Απενεργοποίηση':'Ενεργοποίηση')+'</button>')+
+      '</div></div>';
+  });
+  openModal('Χρήστες με πρόσβαση ('+rows.length+')',h,'<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
+}
+async function setRole(id,role){
+  var r=await SB.from('profiles').update({role:role}).eq('id',id);
+  if(r.error) return alert('Δεν άλλαξε ο ρόλος: '+r.error.message);
+  toast('Ο ρόλος ενημερώθηκε'); users();
+}
+async function toggleActive(id,val){
+  var r=await SB.from('profiles').update({is_active:val}).eq('id',id);
+  if(r.error) return alert('Δεν άλλαξε η κατάσταση: '+r.error.message);
+  toast(val?'Ο λογαριασμός ενεργοποιήθηκε':'Ο λογαριασμός απενεργοποιήθηκε'); users();
+}
 async function rename(id){
   var t=prompt('Νέος τίτλος φακέλου:'); if(!t||!t.trim()) return;
   var r=await SB.from('esidis_folders').update({title:t.trim()}).eq('id',id).select().single();
@@ -223,11 +305,25 @@ async function rename(id){
   folders(); bar();
 }
 async function archive(id){
-  if(!confirm('Να αρχειοθετηθεί ο φάκελος; Δεν διαγράφεται, απλώς φεύγει από τη λίστα.')) return;
+  if(!confirm('Να αρχειοθετηθεί ο φάκελος; Φεύγει από τη λίστα αλλά δεν διαγράφεται.')) return;
   var r=await SB.from('esidis_folders').update({status:'archived'}).eq('id',id);
   if(r.error) return alert(r.error.message);
   if(FOLDER&&FOLDER.id===id){ FOLDER=null; LOADED_AT=null; clearTimeout(timer) }
   await log(id,'archive','Αρχειοθέτηση'); folders(); bar();
+}
+async function unarchive(id){
+  var r=await SB.from('esidis_folders').update({status:'active'}).eq('id',id);
+  if(r.error) return alert(r.error.message);
+  await log(id,'unarchive','Επαναφορά από αρχείο'); toast('Ο φάκελος επανήλθε στη λίστα'); folders(true);
+}
+async function del(id,title){
+  if(!confirm('ΔΙΑΓΡΑΦΗ — αυτή η ενέργεια είναι μόνιμη και δεν αναιρείται.\n\n'+
+              'Φάκελος: «'+title+'»\n\nΝα διαγραφεί οριστικά;')) return;
+  if(!confirm('Επιβεβαίωση: να διαγραφεί οριστικά ο φάκελος «'+title+'»;')) return;
+  var r=await SB.from('esidis_folders').delete().eq('id',id);
+  if(r.error) return alert('Δεν διαγράφηκε: '+r.error.message+
+    (r.error.code==='42501'?'\n\nΔεν έχετε δικαίωμα διαγραφής, ή ο φάκελος δεν είναι αρχειοθετημένος.':''));
+  toast('Ο φάκελος «'+title+'» διαγράφηκε οριστικά'); folders(true);
 }
 async function log(fid,action,note){
   try{ await SB.from('esidis_folder_log').insert({folder_id:fid,action:action,note:note,by_user:USER.id}) }catch(e){}
@@ -244,7 +340,7 @@ async function boot(){
   bar();
   try{ await ensure() }catch(e){ return }
   var s=await SB.auth.getSession();
-  if(s.data&&s.data.session){ USER=s.data.session.user; bar() }
+  if(s.data&&s.data.session){ USER=s.data.session.user; await checkAdmin(); bar() }
 }
 function wire(){
   var orig=window.resetApp;
@@ -252,7 +348,9 @@ function wire(){
   window.addEventListener('beforeunload',function(e){ if(pending){ e.preventDefault(); e.returnValue='' } });
 }
 window.Cloud={login:login,doLogin:doLogin,logout:logout,folders:folders,create:create,
-  open:open_,save:function(){save(false)},rename:rename,archive:archive,markDirty:markDirty,
+  open:open_,save:function(){save(false)},rename:rename,archive:archive,
+  unarchive:unarchive,del:del,markDirty:markDirty,
+  users:users,setRole:setRole,toggleActive:toggleActive,isAdmin:function(){return !!IS_ADMIN},
   newProject:newProject,reload:reload,force:force,
   isOn:function(){return !!USER},folder:function(){return FOLDER},
   dirty:function(){return !!(FOLDER&&pending)}};
