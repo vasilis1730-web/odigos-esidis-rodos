@@ -182,7 +182,8 @@ async function boot(){
 }
 window.Cloud={login:login,doLogin:doLogin,logout:logout,folders:folders,create:create,
   open:open_,save:save,rename:rename,archive:archive,markDirty:markDirty,
-  isOn:function(){return !!USER},folder:function(){return FOLDER}};
+  isOn:function(){return !!USER},folder:function(){return FOLDER},
+  dirty:function(){return !!(FOLDER&&DIRTY)}};
 document.addEventListener('DOMContentLoaded',boot);
 if(document.readyState!=='loading') boot();
 })();
