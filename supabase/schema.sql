@@ -186,7 +186,20 @@ create policy esidis_folder_log_insert on public.esidis_folder_log
   with check (public.esidis_is_member() and by_user = auth.uid());
 
 -- ------------------------------------------------------------
--- 6. Πρώτος διαχειριστής
+-- 6. Δικαιώματα εκτέλεσης
+--    Οι συναρτήσεις των triggers δεν έχουν λόγο να είναι καλέσιμες
+--    από το REST API· οι βοηθητικές του RLS μόνο από συνδεδεμένους.
+-- ------------------------------------------------------------
+revoke all on function public.esidis_handle_new_user() from public, anon, authenticated;
+revoke all on function public.esidis_touch_folder()    from public, anon, authenticated;
+
+revoke all on function public.esidis_is_member() from public, anon;
+revoke all on function public.esidis_is_admin() from public, anon;
+grant execute on function public.esidis_is_member() to authenticated;
+grant execute on function public.esidis_is_admin() to authenticated;
+
+-- ------------------------------------------------------------
+-- 7. Πρώτος διαχειριστής
 --    Αφού δημιουργήσετε τον λογαριασμό σας από
 --    Authentication → Users → Add user, τρέξτε:
 -- ------------------------------------------------------------
