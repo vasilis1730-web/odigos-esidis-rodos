@@ -7,14 +7,11 @@
    Το publishable/anon κλειδί ΕΠΙΤΡΕΠΕΤΑΙ να είναι ορατό:
    η προστασία των δεδομένων γίνεται από τις πολιτικές RLS.
 
-   ΣΥΜΠΛΗΡΩΣΤΕ τις τρεις τιμές μετά τη δημιουργία του νέου project
-   (Supabase → Project Settings → API).
+   Project: odigos-esidis-rodos (organization diakolios@hotmail.com)
    ============================================================ */
 window.ESIDIS_CONFIG = {
-  /* π.χ. 'https://abcdefghijklmnop.supabase.co' */
-  SUPABASE_URL: 'ΣΥΜΠΛΗΡΩΣΤΕ_URL_ΝΕΟΥ_PROJECT',
-  /* publishable (sb_publishable_...) ή anon key */
-  SUPABASE_KEY: 'ΣΥΜΠΛΗΡΩΣΤΕ_KEY_ΝΕΟΥ_PROJECT',
+  SUPABASE_URL: 'https://xsefdyuuvkzlonqkbfbm.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_pEO_ioBgbcwR2mL2qNktsw_AOX8JgoN',
   /* το ref του project — μόνο για τον σύνδεσμο διαχείρισης λογαριασμών */
-  PROJECT_REF: 'ΣΥΜΠΛΗΡΩΣΤΕ_REF_ΝΕΟΥ_PROJECT'
+  PROJECT_REF: 'xsefdyuuvkzlonqkbfbm'
 };
