@@ -4,8 +4,10 @@
             window.LOCAL  {get(), set(obj), title()}
    ============================================================ */
 (function(){
-var URL_='https://hafaxrebjzootjzzqkzx.supabase.co';
-var KEY_='sb_publishable_15lh0rfRuRqFCz_lPZV1hA_CPKGSn_a';
+var CFG=window.ESIDIS_CONFIG||{};
+var URL_=CFG.SUPABASE_URL;
+var KEY_=CFG.SUPABASE_KEY;
+var PROJECT_REF=CFG.PROJECT_REF||'';
 var AUTO_MS=2200;
 var SB=null, USER=null, FOLDER=null, LOADED_AT=null;
 var timer=null, saving=false, pending=false, conflict=null, SUSPEND=false;
@@ -56,6 +58,9 @@ function toast(msg,bad){
 /* ---------- Σύνδεση ---------- */
 async function ensure(){
   if(SB) return SB;
+  if(!URL_||!KEY_||/ΣΥΜΠΛΗΡΩΣΤΕ/.test(URL_)){
+    throw new Error('Δεν έχουν συμπληρωθεί τα στοιχεία σύνδεσης στο config.js.');
+  }
   if(!window.supabase){
     await new Promise(function(res,rej){
       var s=document.createElement('script');
@@ -71,8 +76,9 @@ async function login(after){
   window.__afterLogin=after||null;
   try{ await ensure() }catch(e){ return alert(e.message) }
   openModal('Σύνδεση στους κοινούς φακέλους',
-    '<div class="notice">Χρησιμοποιήστε τα ίδια στοιχεία που έχετε στην εφαρμογή Προμηθειών του Δήμου. '+
-    'Οι φάκελοι είναι κοινοί για όλη την υπηρεσία: ό,τι αποθηκεύετε το βλέπουν και συνεχίζουν οι συνάδελφοι.</div>'+
+    '<div class="notice">Ο λογαριασμός σας είναι <b>αποκλειστικά για τον Οδηγό ΕΣΗΔΗΣ</b> — δεν είναι ο ίδιος '+
+    'με της εφαρμογής Προμηθειών ή του ΥΔΕ. Οι φάκελοι είναι κοινοί για όλη την υπηρεσία: '+
+    'ό,τι αποθηκεύετε το βλέπουν και συνεχίζουν οι συνάδελφοι.</div>'+
     '<div class="form-grid">'+
     '<div class="field"><label>Υπηρεσιακό email</label><input id="cl_mail" type="email" autocomplete="username"></div>'+
     '<div class="field"><label>Κωδικός</label><input id="cl_pass" type="password" autocomplete="current-password"></div>'+
@@ -113,7 +119,7 @@ var IS_ADMIN=null, MY_ROLE=null, MY_ACTIVE=null;
    Απενεργοποιημένος ή χωρίς προφίλ αποσυνδέεται αμέσως. */
 async function loadProfile(){
   try{
-    var r=await SB.from('profiles').select('role,full_name,is_active').eq('id',USER.id).single();
+    var r=await SB.from('esidis_profiles').select('role,full_name,is_active').eq('id',USER.id).single();
     if(r.error||!r.data){
       await kick('Ο λογαριασμός σας δεν έχει προφίλ στην υπηρεσία.\n\n'+
         'Επικοινωνήστε με τον διαχειριστή για να σας δοθεί πρόσβαση.');
@@ -279,11 +285,11 @@ async function users(){
   if(!USER) return login();
   if(!await checkAdmin()) return alert('Η διαχείριση χρηστών είναι διαθέσιμη μόνο σε διαχειριστή.');
   openModal('Χρήστες','<div class="notice">Φόρτωση…</div>','');
-  var q=await SB.from('profiles').select('id,email,full_name,role,is_active').order('email');
+  var q=await SB.from('esidis_profiles').select('id,email,full_name,role,is_active').order('email');
   if(q.error) return openModal('Χρήστες','<div class="notice"><b>Σφάλμα:</b> '+esc(q.error.message)+'</div>',
     '<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
   var rows=q.data||[];
-  var names={admin:'Διαχειριστής',unit_user:'Χρήστης μονάδας',viewer:'Προβολή',central:'Κεντρική υπηρεσία'};
+  var names={admin:'Διαχειριστής',member:'Μέλος υπηρεσίας',viewer:'Προβολή μόνο'};
   var h='<div class="notice"><b>Όλοι οι παρακάτω λογαριασμοί έχουν πρόσβαση στους κοινούς φακέλους</b>, '+
         'αρκεί να είναι ενεργοί. Ο ρόλος καθορίζει μόνο ποιος μπορεί να διαγράφει αρχειοθετημένους φακέλους '+
         'και να διαχειρίζεται χρήστες.</div>'+
@@ -291,7 +297,7 @@ async function users(){
         '<b>Authentication → Users → Add user</b>. Το προφίλ δημιουργείται αυτόματα με ρόλο «Προβολή» '+
         'και τον αλλάζετε από εδώ.'+
         '<div style="margin-top:8px"><button class="btn small primary" '+
-        'onclick="window.open(\'https://supabase.com/dashboard/project/hafaxrebjzootjzzqkzx/auth/users\',\'_blank\')">'+
+        'onclick="window.open(\''+'https://supabase.com/dashboard/project/'+PROJECT_REF+'/auth/users'+'\',\'_blank\')">'+
         'Άνοιγμα διαχείρισης λογαριασμών</button></div></div>'+
         '<div class="notice" style="border-left:6px solid #b45309"><b>Τι κάνει η απενεργοποίηση.</b> '+
         'Ο λογαριασμός χάνει αμέσως κάθε πρόσβαση στους φακέλους και αποσυνδέεται μόλις προσπαθήσει να μπει. '+
@@ -316,12 +322,12 @@ async function users(){
   openModal('Χρήστες με πρόσβαση ('+rows.length+')',h,'<button class="btn" onclick="closeModal()">Κλείσιμο</button>');
 }
 async function setRole(id,role){
-  var r=await SB.from('profiles').update({role:role}).eq('id',id);
+  var r=await SB.from('esidis_profiles').update({role:role}).eq('id',id);
   if(r.error) return alert('Δεν άλλαξε ο ρόλος: '+r.error.message);
   toast('Ο ρόλος ενημερώθηκε'); users();
 }
 async function toggleActive(id,val){
-  var r=await SB.from('profiles').update({is_active:val}).eq('id',id);
+  var r=await SB.from('esidis_profiles').update({is_active:val}).eq('id',id);
   if(r.error) return alert('Δεν άλλαξε η κατάσταση: '+r.error.message);
   toast(val?'Ο λογαριασμός ενεργοποιήθηκε':'Ο λογαριασμός απενεργοποιήθηκε'); users();
 }
